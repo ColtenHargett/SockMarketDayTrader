@@ -1,0 +1,2 @@
+# Runtime has zero dependencies. These are only for running the test suite.
+pytest>=7.0
