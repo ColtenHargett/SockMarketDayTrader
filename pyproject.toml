@@ -20,7 +20,7 @@ dev = ["pytest>=7.0"]
 sockmarket = "sockmarket.cli:main"
 
 [tool.setuptools]
-packages = ["sockmarket", "sockmarket.strategies"]
+packages = ["sockmarket", "sockmarket.strategies", "sockmarket.live"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

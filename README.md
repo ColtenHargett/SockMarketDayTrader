@@ -101,6 +101,52 @@ and you can unit-test it on its own. This is where the model from
 [your Stock Market Predictor](https://github.com/ColtenHargett/portfolio/tree/main/AI%20and%20Machine%20Learning/Stock%20Market%20Predictor)
 drops in.
 
+## Forward / live trading (the real experiment)
+
+A backtest only shows a strategy *would have* worked on the past. The honest test
+of "can it make money" is **forward paper trading**: run it live, going forward,
+on real prices and real market hours, and watch it for months. That lives in
+`sockmarket/live/`.
+
+Two brokers behind one interface (`LiveBroker`):
+
+- **`local`** — our own paper engine on free daily data, with state persisted to
+  `data/live_state.json`. Zero signup. Best for a once-a-day bot.
+- **`alpaca`** — a real [Alpaca](https://alpaca.markets) **paper** account: real
+  fills, real-time data, real market clock, still no real money. The realistic
+  path. Set `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` (free keys).
+
+Two ways to run:
+
+```bash
+# One decision tick — what a scheduler/cron calls once per day after the close:
+python -m sockmarket live --broker local --mode once \
+    --strategy momentum --symbols AAPL MSFT NVDA --ignore-hours
+
+# Continuous real-time loop — ticks while the US market is open, sleeps otherwise:
+python -m sockmarket live --broker alpaca --mode loop \
+    --strategy momentum --symbols AAPL MSFT NVDA --poll 60
+```
+
+`--ignore-hours` is for the end-of-day bot: it acts on the latest *completed*
+daily bar, so the market being closed at run time is fine. Drop it for the
+intraday loop, which trades only during the 9:30–16:00 ET session (holidays and
+half-days included, via `sockmarket/live/clock.py`).
+
+### Running it long-term, hands-off
+
+This bot needs a persistent home — a laptop that's on, a cheap VM, or best of
+all **GitHub Actions**. The repo ships `.github/workflows/live-trade.yml`, which
+runs the bot once every weekday after the close and commits the updated
+portfolio and decision log back to the repo — so your entire forward track
+record accumulates in git history, for free, with no server. For the real Alpaca
+account, add the two API keys as repository secrets and flip the commented block
+in that workflow.
+
+> Reality check: expect live results to be **worse** than the backtest — that gap
+> is exactly what this experiment measures. Give it months before trusting any
+> conclusion, and never move to real money on the strength of a paper run alone.
+
 ## Using real data
 
 The repo ships with a synthetic sample so everything runs offline. When you have
@@ -120,10 +166,11 @@ pytest                                # 21 tests, runs in <1s
 
 ## Roadmap ideas
 
-- A live/forward paper-trading loop (poll latest bar, decide, log) on top of the same brains
 - Sentiment/news signals via an LLM feeding into a `SignalPredictor`
 - Portfolio-level risk controls (max position, per-trade stop-loss, volatility targeting)
 - Walk-forward validation to catch overfitting
+- Limit orders and partial-fill handling on the Alpaca path
+- A small dashboard rendering `data/live_state.json` (equity curve + open positions)
 
 ## License
 

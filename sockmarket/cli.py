@@ -83,6 +83,38 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_live(args: argparse.Namespace) -> int:
+    from .live import LiveConfig, LocalPaperBroker, StooqFeed, run_loop, run_once
+    from .live.state import LiveState
+
+    strategy = _build_strategy(args.strategy)
+
+    if args.broker == "alpaca":
+        from .live.brokers import AlpacaBroker, AlpacaError
+
+        try:
+            broker = AlpacaBroker.from_env()
+        except AlpacaError as exc:
+            raise SystemExit(str(exc))
+    else:
+        state = LiveState.load(args.state, starting_cash=args.cash)
+        broker = LocalPaperBroker(feed=StooqFeed(), state=state)
+
+    config = LiveConfig(
+        symbols=[s.upper() for s in args.symbols] if args.symbols else ["AAPL"],
+        strategy=strategy,
+        broker=broker,
+        state_path=args.state,
+        require_market_open=not args.ignore_hours,
+    )
+
+    if args.mode == "once":
+        result = run_once(config, starting_cash=args.cash)
+        return 0 if result is not None else 1
+    run_loop(config, poll_seconds=args.poll, starting_cash=args.cash)
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     print("Available strategies:")
     for name in sorted(REGISTRY):
@@ -115,6 +147,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(comp)
     comp.add_argument("--strategies", nargs="*", default=None, help="subset to compare")
     comp.set_defaults(func=cmd_compare)
+
+    live = sub.add_parser("live", help="forward-trade in real time (paper money)")
+    live.add_argument("--strategy", default="momentum")
+    live.add_argument("--symbols", nargs="*", default=None, help="tickers to trade (default AAPL)")
+    live.add_argument("--broker", choices=["local", "alpaca"], default="local",
+                      help="'local' = free data + our paper engine; 'alpaca' = real paper account")
+    live.add_argument("--mode", choices=["once", "loop"], default="once",
+                      help="'once' = single tick (for cron); 'loop' = continuous real-time")
+    live.add_argument("--cash", type=float, default=100_000.0, help="starting cash (local broker)")
+    live.add_argument("--state", default="data/live_state.json", help="state file path (local broker)")
+    live.add_argument("--poll", type=float, default=60.0, help="seconds between ticks in loop mode")
+    live.add_argument("--ignore-hours", action="store_true",
+                      help="act on the latest bar even when the market is closed (for testing)")
+    live.set_defaults(func=cmd_live)
 
     lst = sub.add_parser("list", help="list available strategies")
     lst.set_defaults(func=cmd_list)
