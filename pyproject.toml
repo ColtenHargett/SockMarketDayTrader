@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sockmarketdaytrader"
+version = "0.1.0"
+description = "A zero-dependency paper-trading bot and backtester."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Colten Hargett" }]
+keywords = ["trading", "backtest", "paper-trading", "stocks", "finance"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+sockmarket = "sockmarket.cli:main"
+
+[tool.setuptools]
+packages = ["sockmarket", "sockmarket.strategies", "sockmarket.live"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
