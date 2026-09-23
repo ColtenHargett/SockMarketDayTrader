@@ -20,11 +20,18 @@ def make_series(sym, closes, start=dt.date(2025, 1, 2)):
     return bars
 
 
+class OfflinePaperBroker(LocalPaperBroker):
+    """LocalPaperBroker with backfill disabled so unit tests never hit the network."""
+
+    def backfill(self, symbol):
+        return []
+
+
 def _config(tmp_path, feed, state, strategy_name="buy_and_hold"):
     return LiveConfig(
         symbols=["SOCK"],
         strategy=REGISTRY[strategy_name](),
-        broker=LocalPaperBroker(feed=feed, state=state),
+        broker=OfflinePaperBroker(feed=feed, state=state),
         state_path=str(tmp_path / "state.json"),
         log_path=str(tmp_path / "decisions.log"),
         require_market_open=False,  # act regardless of wall-clock time
@@ -84,6 +91,40 @@ def test_market_closed_skips(tmp_path):
     result = tick(config, state)
     assert result["acted"] is False
     assert result["reason"] == "market_closed"
+
+
+def test_fetch_failure_does_not_crash_tick(tmp_path):
+    class BoomBroker(LocalPaperBroker):
+        def latest_bar(self, symbol):
+            raise RuntimeError("network down")
+
+    state = LiveState(starting_cash=10_000.0)
+    broker = BoomBroker(feed=ReplayFeed({"SOCK": []}), state=state)
+    config = LiveConfig(symbols=["SOCK"], strategy=REGISTRY["buy_and_hold"](),
+                        broker=broker, state_path=str(tmp_path / "s.json"),
+                        log_path=str(tmp_path / "d.log"), require_market_open=False)
+    result = tick(config, state)  # must not raise
+    assert result["acted"] is False
+
+
+def test_backfill_warms_up_history(tmp_path):
+    seed = make_series("SOCK", [100, 101, 102, 103])
+
+    class BackfillBroker(LocalPaperBroker):
+        def backfill(self, symbol):
+            return seed[:-1]  # seed prior history
+
+        def latest_bar(self, symbol):
+            return seed[-1]   # newest bar arrives now
+
+    state = LiveState(starting_cash=10_000.0)
+    broker = BackfillBroker(feed=ReplayFeed({"SOCK": []}), state=state)
+    config = LiveConfig(symbols=["SOCK"], strategy=REGISTRY["buy_and_hold"](),
+                        broker=broker, state_path=str(tmp_path / "s.json"),
+                        log_path=str(tmp_path / "d.log"), require_market_open=False)
+    tick(config, state)
+    # backfilled 3 + 1 latest = full 4-bar history available immediately
+    assert len(state.history["SOCK"]) == 4
 
 
 def test_run_loop_bounded(tmp_path):

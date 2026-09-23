@@ -84,7 +84,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 
 def cmd_live(args: argparse.Namespace) -> int:
-    from .live import LiveConfig, LocalPaperBroker, StooqFeed, run_loop, run_once
+    from .live import DailyFeed, LiveConfig, LocalPaperBroker, run_loop, run_once
     from .live.state import LiveState
 
     strategy = _build_strategy(args.strategy)
@@ -98,7 +98,7 @@ def cmd_live(args: argparse.Namespace) -> int:
             raise SystemExit(str(exc))
     else:
         state = LiveState.load(args.state, starting_cash=args.cash)
-        broker = LocalPaperBroker(feed=StooqFeed(), state=state)
+        broker = LocalPaperBroker(feed=DailyFeed(), state=state)
 
     config = LiveConfig(
         symbols=[s.upper() for s in args.symbols] if args.symbols else ["AAPL"],

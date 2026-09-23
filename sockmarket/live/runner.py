@@ -64,10 +64,26 @@ def tick(config: LiveConfig, state: LiveState) -> dict:
         _log(config, f"market closed; skipping (next open {clock.next_open(now)})")
         return {"acted": False, "reason": "market_closed", "orders": 0}
 
-    # 1) Pull the latest bar per symbol and fold new ones into history.
+    # 1) Pull the latest bar per symbol and fold new ones into history. A single
+    #    symbol's fetch failure must never sink the whole tick — log and move on.
     new_data = False
     for symbol in config.symbols:
-        bar = config.broker.latest_bar(symbol)
+        # First time we see a symbol, warm up its lookback with recent history so
+        # strategies needing many bars can trade from the first run.
+        if not state.history.get(symbol):
+            seeded = 0
+            for hb in config.broker.backfill(symbol):
+                if state.record_bar(hb):
+                    seeded += 1
+            if seeded:
+                _log(config, f"backfilled {seeded} bars for {symbol}")
+                new_data = True
+
+        try:
+            bar = config.broker.latest_bar(symbol)
+        except Exception as exc:  # noqa: BLE001 - network/parse errors are expected
+            _log(config, f"fetch failed for {symbol}: {exc}")
+            continue
         if bar is None:
             _log(config, f"no bar returned for {symbol}")
             continue

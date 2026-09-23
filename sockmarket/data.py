@@ -1,9 +1,14 @@
-"""Optional real-data fetcher.
+"""Optional real-data fetcher (free, no API key, standard library only).
 
 The backtester runs fully offline on the bundled ``data/sample_prices.csv``.
-When you have network access and want real history, this pulls free daily bars
-from Stooq (no API key required) using only the standard library, and can cache
-them to a CSV the rest of the tool already understands.
+For real history, this pulls free daily bars from two sources and prefers
+whichever answers:
+
+- **Yahoo Finance** (JSON chart API) — reliable from cloud/CI IPs.
+- **Stooq** (CSV) — a fallback; note Stooq often blocks datacenter IPs.
+
+Both requests send a browser-like User-Agent, without which some hosts return
+403/404 to the default urllib agent.
 
 Usage:
     python -m sockmarket.data fetch AAPL MSFT --start 2022-01-01 --out data/real.csv
@@ -14,27 +19,28 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import json
 import urllib.request
 from pathlib import Path
 
 from .market import Bar
 
 STOOQ_URL = "https://stooq.com/q/d/l/?s={symbol}.us&i=d"
+YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval=1d"
+_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 
 
-def fetch_symbol(symbol: str, timeout: float = 20.0) -> list[Bar]:
-    """Fetch full daily history for one US symbol from Stooq.
+def _http_get(url: str, timeout: float) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "*/*"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted URL)
+        return resp.read().decode("utf-8", errors="replace")
 
-    Raises urllib errors on network failure — callers should fall back to the
-    bundled sample data. Honors HTTP(S)_PROXY via urllib's default handlers.
-    """
-    url = STOOQ_URL.format(symbol=symbol.lower())
-    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (trusted URL)
-        text = resp.read().decode("utf-8", errors="replace")
 
+def fetch_symbol_stooq(symbol: str, timeout: float = 20.0) -> list[Bar]:
+    """Full daily history for one US symbol from Stooq (CSV)."""
+    text = _http_get(STOOQ_URL.format(symbol=symbol.lower()), timeout)
     bars: list[Bar] = []
-    reader = csv.DictReader(io.StringIO(text))
-    for row in reader:
+    for row in csv.DictReader(io.StringIO(text)):
         # Stooq columns: Date,Open,High,Low,Close,Volume
         if not row.get("Date") or row["Date"] == "Date":
             continue
@@ -43,16 +49,68 @@ def fetch_symbol(symbol: str, timeout: float = 20.0) -> list[Bar]:
                 Bar(
                     date=dt.date.fromisoformat(row["Date"]),
                     symbol=symbol.upper(),
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=int(float(row.get("Volume") or 0)),
+                    open=float(row["Open"]), high=float(row["High"]), low=float(row["Low"]),
+                    close=float(row["Close"]), volume=int(float(row.get("Volume") or 0)),
                 )
             )
         except (ValueError, KeyError):
             continue
     return bars
+
+
+def fetch_symbol_yahoo(symbol: str, timeout: float = 20.0, rng: str = "1y") -> list[Bar]:
+    """Daily history for one symbol from Yahoo Finance's chart API (JSON)."""
+    text = _http_get(YAHOO_URL.format(symbol=symbol.upper(), range=rng), timeout)
+    return _parse_yahoo(text, symbol)
+
+
+def _parse_yahoo(text: str, symbol: str) -> list[Bar]:
+    payload = json.loads(text)
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        return []
+    stamps = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+    opens, highs = quote.get("open") or [], quote.get("high") or []
+    lows, closes = quote.get("low") or [], quote.get("close") or []
+    vols = quote.get("volume") or []
+    bars: list[Bar] = []
+    for i, ts in enumerate(stamps):
+        try:
+            c = closes[i]
+            if c is None:
+                continue  # Yahoo pads incomplete rows with nulls
+            d = dt.datetime.fromtimestamp(ts, dt.timezone.utc).date()
+            bars.append(Bar(
+                date=d, symbol=symbol.upper(),
+                open=float(opens[i] if opens[i] is not None else c),
+                high=float(highs[i] if highs[i] is not None else c),
+                low=float(lows[i] if lows[i] is not None else c),
+                close=float(c),
+                volume=int(vols[i] or 0) if i < len(vols) else 0,
+            ))
+        except (IndexError, ValueError, TypeError):
+            continue
+    return bars
+
+
+def fetch_symbol(symbol: str, timeout: float = 20.0) -> list[Bar]:
+    """Full daily history for one symbol, trying Yahoo first, then Stooq.
+
+    Raises the last error only if *both* sources fail, so a single flaky host
+    doesn't sink the request.
+    """
+    errors = []
+    for source in (fetch_symbol_yahoo, fetch_symbol_stooq):
+        try:
+            bars = source(symbol, timeout=timeout)
+            if bars:
+                return bars
+        except Exception as exc:  # noqa: BLE001 - try the next source
+            errors.append(f"{source.__name__}: {exc}")
+    if errors:
+        raise RuntimeError(f"all data sources failed for {symbol}: {'; '.join(errors)}")
+    return []
 
 
 def fetch(

@@ -20,12 +20,16 @@ class Feed:
         raise NotImplementedError
 
 
-class StooqFeed(Feed):
-    """Latest completed daily bar from Stooq (free, no key)."""
+class DailyFeed(Feed):
+    """Latest completed daily bar from the free sources (Yahoo, then Stooq)."""
 
     def latest_bar(self, symbol: str) -> Bar | None:
         bars = fetch_symbol(symbol)
         return bars[-1] if bars else None
+
+
+# Back-compat alias — the feed now tries Yahoo first and falls back to Stooq.
+StooqFeed = DailyFeed
 
 
 class ReplayFeed(Feed):
