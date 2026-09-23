@@ -4,9 +4,13 @@ name: live-paper-trade
 # portfolio + decision log back to the repo. Over weeks this builds a real
 # forward-testing track record you can inspect in git history.
 #
-# Default: the zero-signup local paper broker on free daily data.
-# To trade a real Alpaca paper account instead, add repo secrets
-# ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY and switch the run step below.
+# Data source is chosen automatically:
+#   - If repo secrets ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY are set, it
+#     trades a real Alpaca *paper* account (reliable data + fills from CI).
+#   - Otherwise it uses the free local paper broker. Note: free data hosts
+#     (Yahoo/Stooq) rate-limit GitHub's shared runner IPs, so free-mode runs can
+#     intermittently fetch no data and simply hold — add Alpaca keys for
+#     reliable daily data.
 
 on:
   schedule:
@@ -36,41 +40,45 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run one trading tick (local paper broker)
+      - name: Run one trading tick
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
         run: |
+          # Use Alpaca automatically when keys are present; otherwise free data.
+          if [ -n "$ALPACA_API_KEY_ID" ] && [ -n "$ALPACA_API_SECRET_KEY" ]; then
+            BROKER=alpaca
+          else
+            BROKER=local
+          fi
+          echo "Trading via broker: $BROKER"
+          # --ignore-hours: this is an end-of-day bot — it acts on the latest
+          # completed daily bar, so the market being closed at run time is fine.
           python -m sockmarket live \
-            --broker local \
+            --broker "$BROKER" \
             --mode once \
             --strategy momentum \
             --symbols AAPL MSFT GOOG AMZN NVDA \
             --cash 100000 \
             --state data/live_state.json \
             --ignore-hours
-        # --ignore-hours: this is an end-of-day bot. It acts on the latest
-        # completed daily bar; the market being closed at run time is expected.
-
-        # --- Alpaca alternative (real paper account) -----------------------
-        # Replace the run block above with:
-        #   env:
-        #     ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
-        #     ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
-        #   run: |
-        #     python -m sockmarket live --broker alpaca --mode once \
-        #       --strategy momentum --symbols AAPL MSFT GOOG AMZN NVDA --ignore-hours
 
       - name: Regenerate the dashboard
+        if: always()  # refresh the dashboard even if a tick fetched no data
         run: |
           python -m sockmarket dashboard \
             --state data/live_state.json \
             --out dashboard.html
 
       - name: Commit the updated track record
+        if: always()
         run: |
           git config user.name "sockmarket-bot"
           git config user.email "actions@github.com"
-          git add data/live_state.json data/live_decisions.log dashboard.html
+          # Stage whatever exists; a no-data day may produce no state file.
+          git add -A
           if git diff --cached --quiet; then
-            echo "No state changes to commit (no new bar today)."
+            echo "No changes to commit (no new bar today)."
           else
             git commit -m "chore(live): daily trading tick $(date -u +%Y-%m-%d)"
             git push
