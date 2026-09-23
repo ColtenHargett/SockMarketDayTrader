@@ -20,6 +20,8 @@ import csv
 import datetime as dt
 import io
 import json
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -28,12 +30,34 @@ from .market import Bar
 STOOQ_URL = "https://stooq.com/q/d/l/?s={symbol}.us&i=d"
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval=1d"
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+_RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
-def _http_get(url: str, timeout: float) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "*/*"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted URL)
-        return resp.read().decode("utf-8", errors="replace")
+def _http_get(url: str, timeout: float, retries: int = 3, backoff: float = 1.5) -> str:
+    """GET with a browser User-Agent and exponential backoff on throttling.
+
+    Free data hosts rate-limit shared/datacenter IPs (429) — a couple of spaced
+    retries clears most transient throttles.
+    """
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "*/*"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+                return resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            last = exc
+            if exc.code in _RETRY_STATUS and attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
+        except urllib.error.URLError as exc:
+            last = exc
+            if attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
+    raise last if last else RuntimeError("request failed")
 
 
 def fetch_symbol_stooq(symbol: str, timeout: float = 20.0) -> list[Bar]:

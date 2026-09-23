@@ -94,7 +94,7 @@ def test_market_closed_skips(tmp_path):
 
 
 def test_fetch_failure_does_not_crash_tick(tmp_path):
-    class BoomBroker(LocalPaperBroker):
+    class BoomBroker(OfflinePaperBroker):  # offline backfill; only latest_bar fails
         def latest_bar(self, symbol):
             raise RuntimeError("network down")
 

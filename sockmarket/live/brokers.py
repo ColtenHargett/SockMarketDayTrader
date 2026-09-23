@@ -160,6 +160,24 @@ class AlpacaBroker(LiveBroker):
             close=float(bar["c"]), volume=int(bar.get("v", 0)),
         )
 
+    def backfill(self, symbol: str) -> list[Bar]:
+        url = f"{self.data_url}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=120&adjustment=raw"
+        try:
+            payload = self._request("GET", url)
+        except AlpacaError:
+            return []
+        bars = []
+        for b in payload.get("bars") or []:
+            try:
+                bars.append(Bar(
+                    date=dt.date.fromisoformat(b["t"][:10]), symbol=symbol.upper(),
+                    open=float(b["o"]), high=float(b["h"]), low=float(b["l"]),
+                    close=float(b["c"]), volume=int(b.get("v", 0)),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return bars
+
     def position_qty(self, symbol: str) -> float:
         try:
             pos = self._request("GET", f"{self.base_url}/v2/positions/{symbol}")

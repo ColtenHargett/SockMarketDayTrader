@@ -1,10 +1,11 @@
 import datetime as dt
 import json
+import urllib.error
 
 import pytest
 
 from sockmarket import data
-from sockmarket.data import _parse_yahoo, fetch_symbol
+from sockmarket.data import _http_get, _parse_yahoo, fetch_symbol
 
 
 def _yahoo_payload():
@@ -65,3 +66,43 @@ def test_fetch_symbol_raises_when_all_sources_fail(monkeypatch):
     monkeypatch.setattr(data, "fetch_symbol_stooq", boom)
     with pytest.raises(RuntimeError):
         fetch_symbol("AAPL")
+
+
+class _FakeResp:
+    def __init__(self, body):
+        self._body = body.encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_http_get_retries_on_429_then_succeeds(monkeypatch):
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)  # no real delay
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+        return _FakeResp("ok")
+
+    monkeypatch.setattr(data.urllib.request, "urlopen", fake_urlopen)
+    assert _http_get("https://example.test", timeout=1.0) == "ok"
+    assert calls["n"] == 2  # retried once after the 429
+
+
+def test_http_get_gives_up_after_retries(monkeypatch):
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+
+    def always_429(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(data.urllib.request, "urlopen", always_429)
+    with pytest.raises(urllib.error.HTTPError):
+        _http_get("https://example.test", timeout=1.0, retries=2)
