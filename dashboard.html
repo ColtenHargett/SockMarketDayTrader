@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SockMarket — Live Track Record</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane: #f9f9f7; --surface: #fcfcfb;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #eb6834;
+    --up: #006300; --down: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --plane: #0d0d0d; --surface: #1a1a19;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #d95926;
+      --up: #0ca30c; --down: #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d; --surface: #1a1a19;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926;
+    --up: #0ca30c; --down: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.45;
+  }
+  .container { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 4px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  .meta { color: var(--muted); font-size: 0.82rem; }
+  .disclaimer { color: var(--muted); font-size: 0.78rem; margin: 6px 0 20px; }
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .tile-label { color: var(--text-secondary); font-size: 0.8rem; }
+  .tile-value { font-size: 1.35rem; font-weight: 650; margin-top: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tile-sub { color: var(--muted); font-size: 0.76rem; margin-top: 2px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin-bottom: 22px;
+  }
+  .card h2 { font-size: 1rem; margin: 0 0 14px; }
+  .legend { display: flex; gap: 18px; margin: 0 0 10px; font-size: 0.85rem; color: var(--text-secondary); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chart-wrap { position: relative; width: 100%; }
+  svg#chart { width: 100%; height: 340px; display: block; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 0.78rem; box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+    transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; z-index: 5;
+  }
+  .tooltip .t-date { color: var(--muted); margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-secondary); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .side { padding: 1px 7px; border-radius: 999px; font-size: 0.74rem; }
+  .side.buy { background: color-mix(in srgb, var(--series-1) 18%, transparent); color: var(--series-1); }
+  .side.sell { background: color-mix(in srgb, var(--series-2) 18%, transparent); color: var(--series-2); }
+  .empty { color: var(--muted); font-size: 0.9rem; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>SockMarket — Live Track Record</h1>
+    <span class="meta">last tick never · generated 2026-09-23T16:50:38</span>
+  </header>
+  <p class="disclaimer">Paper money only — no real brokerage, no real funds. Forward results are the honest test and usually trail the backtest.</p>
+
+  <div class="tiles"><div class="tile"><div class="tile-label">Equity</div><div class="tile-value ">$100,000</div></div><div class="tile"><div class="tile-label">Total return</div><div class="tile-value flat">+0.00%</div><div class="tile-sub">from $100,000</div></div><div class="tile"><div class="tile-label">vs Buy &amp; Hold</div><div class="tile-value flat">+0.00%</div><div class="tile-sub">B&amp;H +0.00%</div></div><div class="tile"><div class="tile-label">Max drawdown</div><div class="tile-value flat">-0.00%</div></div><div class="tile"><div class="tile-label">Trades</div><div class="tile-value ">0</div><div class="tile-sub">realized $0</div></div><div class="tile"><div class="tile-label">Cash</div><div class="tile-value ">$100,000</div></div></div>
+
+  <div class="card">
+    <h2>Equity curve</h2>
+    <div class="legend">
+      <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Strategy</span>
+      <span class="key"><span class="swatch" style="background:var(--series-2)"></span>Buy &amp; Hold</span>
+    </div>
+    <p class="empty">No equity history yet — the chart appears after the bot has run for a couple of days.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card"><h2>Open positions</h2><p class="empty">No open positions.</p></div>
+    <div class="card"><h2>Recent trades</h2><p class="empty">No trades yet.</p></div>
+  </div>
+</div>
+
+<script type="application/json" id="data">{"title": "SockMarket \u2014 Live Track Record", "generated": "2026-09-23T16:50:38", "strategy": [], "benchmark": [], "stats": {"starting_cash": 100000.0, "current_equity": 100000.0, "total_return": 0.0, "bench_return": 0.0, "edge": 0.0, "max_drawdown": 0.0, "sharpe": 0.0, "num_trades": 0, "realized_pnl": 0, "cash": 100000.0, "last_run": null}, "positions": [], "trades": []}</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var svg = document.getElementById("chart");
+  if (!svg || data.strategy.length < 2) return;
+
+  var NS = "http://www.w3.org/2000/svg";
+  var W = 920, H = 340, M = { t: 16, r: 16, b: 30, l: 62 };
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  var plotW = W - M.l - M.r, plotH = H - M.t - M.b;
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function toTime(s) { return new Date(s.length <= 10 ? s + "T00:00:00" : s).getTime(); }
+
+  var strat = data.strategy.map(function (p) { return { t: toTime(p[0]), v: p[1], label: p[0] }; });
+  var bench = data.benchmark.map(function (p) { return { t: toTime(p[0]), v: p[1], label: p[0] }; });
+  var all = strat.concat(bench);
+  var tMin = Math.min.apply(null, all.map(function (d) { return d.t; }));
+  var tMax = Math.max.apply(null, all.map(function (d) { return d.t; }));
+  var vMin = Math.min.apply(null, all.map(function (d) { return d.v; }));
+  var vMax = Math.max.apply(null, all.map(function (d) { return d.v; }));
+  var pad = (vMax - vMin) * 0.08 || vMax * 0.05 || 1;
+  vMin -= pad; vMax += pad;
+
+  function x(t) { return M.l + (tMax === tMin ? 0 : (t - tMin) / (tMax - tMin)) * plotW; }
+  function y(v) { return M.t + (1 - (v - vMin) / (vMax - vMin)) * plotH; }
+
+  function el(name, attrs) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function money(v) {
+    return "$" + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  // gridlines + y labels
+  var ticks = 5;
+  for (var i = 0; i <= ticks; i++) {
+    var v = vMin + (vMax - vMin) * (i / ticks);
+    var yy = y(v);
+    svg.appendChild(el("line", { x1: M.l, y1: yy, x2: W - M.r, y2: yy, stroke: css("--grid"), "stroke-width": 1 }));
+    var lbl = el("text", { x: M.l - 8, y: yy + 4, "text-anchor": "end", fill: css("--muted"), "font-size": 11 });
+    lbl.textContent = money(v);
+    svg.appendChild(lbl);
+  }
+  // baseline at starting cash for reference
+  var base = data.stats.starting_cash;
+  if (base >= vMin && base <= vMax) {
+    svg.appendChild(el("line", { x1: M.l, y1: y(base), x2: W - M.r, y2: y(base),
+      stroke: css("--axis"), "stroke-width": 1, "stroke-dasharray": "3 3" }));
+  }
+  // x labels (first, middle, last) — anchor the ends inward so they don't clip
+  var xLabels = [
+    { idx: 0, anchor: "start" },
+    { idx: Math.floor(strat.length / 2), anchor: "middle" },
+    { idx: strat.length - 1, anchor: "end" },
+  ];
+  xLabels.forEach(function (spec) {
+    var p = strat[spec.idx]; if (!p) return;
+    var t = el("text", { x: x(p.t), y: H - 10, "text-anchor": spec.anchor, fill: css("--muted"), "font-size": 11 });
+    t.textContent = p.label.slice(0, 10);
+    svg.appendChild(t);
+  });
+
+  function path(points, color, width) {
+    var d = points.map(function (p, i) { return (i ? "L" : "M") + x(p.t).toFixed(1) + " " + y(p.v).toFixed(1); }).join(" ");
+    svg.appendChild(el("path", { d: d, fill: "none", stroke: color, "stroke-width": width,
+      "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  }
+  path(bench, css("--series-2"), 2);
+  path(strat, css("--series-1"), 2);
+
+  // direct end labels
+  function endLabel(points, color, text) {
+    var p = points[points.length - 1];
+    var t = el("text", { x: x(p.t) - 4, y: y(p.v) - 6, "text-anchor": "end", fill: color, "font-size": 11, "font-weight": 600 });
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  endLabel(strat, css("--series-1"), "Strategy");
+  endLabel(bench, css("--series-2"), "B&H");
+
+  // hover crosshair + tooltip
+  var tip = document.getElementById("tooltip");
+  var vline = el("line", { y1: M.t, y2: M.t + plotH, stroke: css("--axis"), "stroke-width": 1, opacity: 0 });
+  var dot1 = el("circle", { r: 4, fill: css("--series-1"), opacity: 0 });
+  var dot2 = el("circle", { r: 4, fill: css("--series-2"), opacity: 0 });
+  svg.appendChild(vline); svg.appendChild(dot1); svg.appendChild(dot2);
+
+  function nearest(points, t) {
+    var best = points[0], bd = Infinity;
+    for (var i = 0; i < points.length; i++) {
+      var d = Math.abs(points[i].t - t);
+      if (d < bd) { bd = d; best = points[i]; }
+    }
+    return best;
+  }
+  svg.addEventListener("mousemove", function (ev) {
+    var rect = svg.getBoundingClientRect();
+    var px = (ev.clientX - rect.left) / rect.width * W;
+    if (px < M.l || px > W - M.r) return;
+    var t = tMin + (px - M.l) / plotW * (tMax - tMin);
+    var s = nearest(strat, t), b = nearest(bench, t);
+    vline.setAttribute("x1", x(s.t)); vline.setAttribute("x2", x(s.t)); vline.setAttribute("opacity", 1);
+    dot1.setAttribute("cx", x(s.t)); dot1.setAttribute("cy", y(s.v)); dot1.setAttribute("opacity", 1);
+    dot2.setAttribute("cx", x(b.t)); dot2.setAttribute("cy", y(b.v)); dot2.setAttribute("opacity", 1);
+    tip.hidden = false;
+    tip.style.left = (x(s.t) / W * rect.width) + "px";
+    tip.style.top = (y(Math.max(s.v, b.v)) / H * rect.height) + "px";
+    tip.innerHTML = '<div class="t-date">' + s.label.slice(0, 10) + '</div>' +
+      '<div class="t-row"><span>Strategy</span><b>' + money(s.v) + '</b></div>' +
+      '<div class="t-row"><span>Buy &amp; Hold</span><b>' + money(b.v) + '</b></div>';
+  });
+  svg.addEventListener("mouseleave", function () {
+    tip.hidden = true; vline.setAttribute("opacity", 0);
+    dot1.setAttribute("opacity", 0); dot2.setAttribute("opacity", 0);
+  });
+})();
+</script>
+</body>
+</html>
