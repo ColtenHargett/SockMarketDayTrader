@@ -51,6 +51,12 @@ class LiveBroker:
         """
         return None
 
+    def backfill(self, symbol: str) -> list[Bar]:
+        """Recent daily history for a symbol, used once to warm up a strategy's
+        lookback so it can trade from the first run instead of waiting weeks for
+        history to accumulate one bar at a time. Empty by default."""
+        return []
+
     def describe(self) -> str:
         return type(self).__name__
 
@@ -73,6 +79,14 @@ class LocalPaperBroker(LiveBroker):
 
     def latest_bar(self, symbol: str) -> Bar | None:
         return self.feed.latest_bar(symbol)
+
+    def backfill(self, symbol: str) -> list[Bar]:
+        from ..data import fetch_symbol
+
+        try:
+            return fetch_symbol(symbol)
+        except Exception:  # noqa: BLE001 - warm-up is best-effort
+            return []
 
     def position_qty(self, symbol: str) -> float:
         return self.state.portfolio.quantity(symbol)

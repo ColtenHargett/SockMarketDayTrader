@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from .clock import MarketClock
 from .state import LiveState
-from .feeds import Feed, StooqFeed, ReplayFeed
+from .feeds import Feed, DailyFeed, StooqFeed, ReplayFeed
 from .brokers import LiveBroker, LocalPaperBroker, AlpacaBroker
 from .runner import run_once, run_loop, LiveConfig
 
@@ -29,6 +29,7 @@ __all__ = [
     "MarketClock",
     "LiveState",
     "Feed",
+    "DailyFeed",
     "StooqFeed",
     "ReplayFeed",
     "LiveBroker",
