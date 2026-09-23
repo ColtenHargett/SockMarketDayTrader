@@ -46,6 +46,21 @@ def test_tick_places_order_and_persists(tmp_path):
     assert reloaded.portfolio.quantity("SOCK") == pytest.approx(state.portfolio.quantity("SOCK"))
 
 
+def test_benchmark_is_tracked_and_lifetime_aligned(tmp_path):
+    feed = ReplayFeed({"SOCK": make_series("SOCK", [100, 110, 120, 130])})
+    state = LiveState(starting_cash=10_000.0)
+    config = _config(tmp_path, feed, state)
+    for _ in range(4):
+        tick(config, state)
+    # benchmark bought at 100 with all 10k -> 100 shares; by the last bar (130)
+    # the buy-and-hold value is 13,000, and it has one point per tick.
+    assert len(state.benchmark_log) == 4
+    assert state.benchmark_log[0][1] == pytest.approx(10_000.0)
+    assert state.benchmark_log[-1][1] == pytest.approx(13_000.0)
+    # equity and benchmark logs stay tick-for-tick aligned
+    assert len(state.equity_log) == len(state.benchmark_log)
+
+
 def test_no_new_bar_means_hold(tmp_path):
     feed = ReplayFeed({"SOCK": make_series("SOCK", [100])})
     state = LiveState(starting_cash=10_000.0)

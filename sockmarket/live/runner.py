@@ -102,9 +102,14 @@ def tick(config: LiveConfig, state: LiveState) -> dict:
         _log(config, f"ORDER {order.side} {order.quantity:.4f} {order.symbol} @~{bar.close:.2f}"
                      f"  ({order.reason})")
 
-    # 5) Record equity and persist.
+    # 5) Record equity + benchmark (keyed by the market date so the equity curve
+    #    plots on the real trading calendar) and persist.
+    as_of = max((h[-1].date for s, h in state.history.items() if h and s in config.symbols),
+                default=now.date())
+    state.ensure_benchmark(config.symbols)
     state.last_run = now.isoformat()
-    state.log_equity(now)
+    state.log_equity(as_of)
+    state.log_benchmark(as_of)
     state.save(config.state_path)
 
     equity = config.broker.equity() if not isinstance(config.broker, LocalPaperBroker) else state.equity()

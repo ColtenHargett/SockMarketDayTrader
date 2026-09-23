@@ -133,6 +133,22 @@ daily bar, so the market being closed at run time is fine. Drop it for the
 intraday loop, which trades only during the 9:30–16:00 ET session (holidays and
 half-days included, via `sockmarket/live/clock.py`).
 
+### Watching it: the dashboard
+
+Turn the live state into a standalone HTML dashboard — stat tiles, an inline-SVG
+equity curve of the strategy vs a lifetime buy-and-hold benchmark (with a hover
+tooltip), and tables of open positions and recent trades. No dependencies, light
+and dark themes:
+
+```bash
+python -m sockmarket dashboard --state data/live_state.json --out dashboard.html
+```
+
+The GitHub Actions workflow regenerates `dashboard.html` on every tick and commits
+it, so opening that file always shows the latest track record. The buy-and-hold
+benchmark is tracked inside the state itself (shares fixed at inception, valued
+every tick), so the comparison stays lifetime-accurate no matter how long it runs.
+
 ### Running it long-term, hands-off
 
 This bot needs a persistent home — a laptop that's on, a cheap VM, or best of

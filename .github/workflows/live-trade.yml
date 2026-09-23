@@ -58,11 +58,17 @@ jobs:
         #     python -m sockmarket live --broker alpaca --mode once \
         #       --strategy momentum --symbols AAPL MSFT GOOG AMZN NVDA --ignore-hours
 
+      - name: Regenerate the dashboard
+        run: |
+          python -m sockmarket dashboard \
+            --state data/live_state.json \
+            --out dashboard.html
+
       - name: Commit the updated track record
         run: |
           git config user.name "sockmarket-bot"
           git config user.email "actions@github.com"
-          git add data/live_state.json data/live_decisions.log
+          git add data/live_state.json data/live_decisions.log dashboard.html
           if git diff --cached --quiet; then
             echo "No state changes to commit (no new bar today)."
           else

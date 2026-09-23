@@ -24,7 +24,12 @@ class LiveState:
     starting_cash: float = 100_000.0
     portfolio: Portfolio = field(default_factory=lambda: Portfolio(100_000.0))
     history: dict[str, list[Bar]] = field(default_factory=dict)
-    equity_log: list[tuple[str, float]] = field(default_factory=list)  # (iso datetime, equity)
+    equity_log: list[tuple[str, float]] = field(default_factory=list)  # (date iso, equity)
+    # A passive equal-weight buy-and-hold benchmark tracked alongside the
+    # strategy: shares are fixed at inception, and its value is logged on every
+    # tick so the comparison stays lifetime-correct even as bar history rolls off.
+    benchmark_shares: dict[str, float] = field(default_factory=dict)
+    benchmark_log: list[tuple[str, float]] = field(default_factory=list)  # (date iso, value)
     last_run: str | None = None
 
     # --- history helpers -------------------------------------------------
@@ -48,8 +53,28 @@ class LiveState:
     def equity(self) -> float:
         return self.portfolio.equity(self.latest_prices())
 
-    def log_equity(self, when: dt.datetime) -> None:
+    def log_equity(self, when: dt.datetime | dt.date) -> None:
         self.equity_log.append((when.isoformat(), self.equity()))
+
+    def ensure_benchmark(self, symbols: list[str]) -> None:
+        """Fix the buy-and-hold share counts once, at the first tick with data:
+        split starting cash equally across the symbols and buy at their current
+        price. Called every tick but only acts the first time."""
+        if self.benchmark_shares:
+            return
+        prices = self.latest_prices()
+        syms = [s for s in symbols if prices.get(s)]
+        if not syms:
+            return
+        alloc = self.starting_cash / len(syms)
+        self.benchmark_shares = {s: alloc / prices[s] for s in syms}
+
+    def benchmark_value(self) -> float:
+        prices = self.latest_prices()
+        return sum(q * prices.get(s, 0.0) for s, q in self.benchmark_shares.items())
+
+    def log_benchmark(self, when: dt.datetime | dt.date) -> None:
+        self.benchmark_log.append((when.isoformat(), self.benchmark_value()))
 
     # --- persistence -----------------------------------------------------
     def to_dict(self) -> dict:
@@ -80,6 +105,8 @@ class LiveState:
                 for s, bars in self.history.items()
             },
             "equity_log": [[ts, eq] for ts, eq in self.equity_log],
+            "benchmark_shares": dict(self.benchmark_shares),
+            "benchmark_log": [[ts, v] for ts, v in self.benchmark_log],
             "last_run": self.last_run,
         }
 
@@ -121,6 +148,8 @@ class LiveState:
             portfolio=portfolio,
             history=history,
             equity_log=equity_log,
+            benchmark_shares={s: float(q) for s, q in data.get("benchmark_shares", {}).items()},
+            benchmark_log=[(ts, v) for ts, v in data.get("benchmark_log", [])],
             last_run=data.get("last_run"),
         )
 

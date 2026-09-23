@@ -115,6 +115,14 @@ def cmd_live(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from .dashboard import build_from_file
+
+    out = build_from_file(args.state, args.out)
+    print(f"dashboard -> {out}")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     print("Available strategies:")
     for name in sorted(REGISTRY):
@@ -161,6 +169,11 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--ignore-hours", action="store_true",
                       help="act on the latest bar even when the market is closed (for testing)")
     live.set_defaults(func=cmd_live)
+
+    dash = sub.add_parser("dashboard", help="render live state to a standalone HTML dashboard")
+    dash.add_argument("--state", default="data/live_state.json", help="live state JSON to read")
+    dash.add_argument("--out", default="dashboard.html", help="HTML file to write")
+    dash.set_defaults(func=cmd_dashboard)
 
     lst = sub.add_parser("list", help="list available strategies")
     lst.set_defaults(func=cmd_list)
