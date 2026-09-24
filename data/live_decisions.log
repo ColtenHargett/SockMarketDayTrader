@@ -4,3 +4,8 @@
 2026-09-23T12:50:27.363718-04:00  fetch failed for AMZN: all data sources failed for AMZN: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
 2026-09-23T12:50:38.019633-04:00  fetch failed for NVDA: all data sources failed for NVDA: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
 2026-09-23T12:50:38.019730-04:00  no new bars since last tick; holding
+2026-09-23T20:08:18.697584-04:00  fetch failed for AAPL: all data sources failed for AAPL: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
+2026-09-23T20:08:29.397226-04:00  fetch failed for MSFT: all data sources failed for MSFT: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
+2026-09-23T20:08:40.014192-04:00  fetch failed for GOOG: all data sources failed for GOOG: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
+2026-09-23T20:08:50.611670-04:00  fetch failed for AMZN: all data sources failed for AMZN: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
+2026-09-23T20:08:56.091912-04:00  tick done: 0 order(s), equity ~$100,000.00
