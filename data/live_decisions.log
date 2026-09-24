@@ -9,3 +9,8 @@
 2026-09-23T20:08:40.014192-04:00  fetch failed for GOOG: all data sources failed for GOOG: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
 2026-09-23T20:08:50.611670-04:00  fetch failed for AMZN: all data sources failed for AMZN: fetch_symbol_yahoo: HTTP Error 429: Too Many Requests
 2026-09-23T20:08:56.091912-04:00  tick done: 0 order(s), equity ~$100,000.00
+2026-09-23T22:29:20.077976-04:00  backfilled 1 bars for AAPL
+2026-09-23T22:29:20.167802-04:00  backfilled 1 bars for MSFT
+2026-09-23T22:29:20.256892-04:00  backfilled 1 bars for GOOG
+2026-09-23T22:29:20.345983-04:00  backfilled 1 bars for AMZN
+2026-09-23T22:29:20.552281-04:00  tick done: 0 order(s), equity ~$100,000.00
