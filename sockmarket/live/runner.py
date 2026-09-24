@@ -18,7 +18,11 @@ from ..portfolio import Position
 from ..strategy import Context, Strategy
 from .brokers import LiveBroker, LocalPaperBroker
 from .clock import MarketClock
-from .state import LiveState
+from .state import HISTORY_LIMIT, LiveState
+
+# Warm up at least this many bars per symbol so lookback strategies (e.g.
+# momentum's 60-bar window) can act from the first run.
+WARMUP_BARS = 60
 
 
 @dataclass
@@ -68,15 +72,15 @@ def tick(config: LiveConfig, state: LiveState) -> dict:
     #    symbol's fetch failure must never sink the whole tick — log and move on.
     new_data = False
     for symbol in config.symbols:
-        # First time we see a symbol, warm up its lookback with recent history so
-        # strategies needing many bars can trade from the first run.
-        if not state.history.get(symbol):
-            seeded = 0
-            for hb in config.broker.backfill(symbol):
-                if state.record_bar(hb):
-                    seeded += 1
-            if seeded:
-                _log(config, f"backfilled {seeded} bars for {symbol}")
+        # Warm up lookback with recent history whenever we don't yet have enough
+        # bars. record_bar only accepts *newer* dates, so we can't backfill older
+        # history into a short list — instead replace it with the fuller series.
+        existing = state.history.get(symbol) or []
+        if len(existing) < WARMUP_BARS:
+            seed = config.broker.backfill(symbol)
+            if len(seed) > len(existing):
+                state.history[symbol] = seed[-HISTORY_LIMIT:]
+                _log(config, f"backfilled {len(seed)} bars for {symbol}")
                 new_data = True
 
         try:
