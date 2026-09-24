@@ -151,9 +151,15 @@ class AlpacaBroker(LiveBroker):
 
     # --- LiveBroker interface -------------------------------------------
     def _daily_bars(self, symbol: str, limit: int) -> list[Bar]:
-        """Recent completed daily bars from Alpaca (IEX feed by default)."""
+        """Recent completed daily bars from Alpaca (IEX feed by default).
+
+        An explicit ``start`` is required — without it Alpaca returns only the
+        most recent bar, which starves lookback-based strategies.
+        """
+        span_days = int(limit * 1.6) + 10  # calendar days to cover weekends/holidays
+        start = (dt.date.today() - dt.timedelta(days=span_days)).isoformat()
         url = (f"{self.data_url}/v2/stocks/{symbol}/bars"
-               f"?timeframe=1Day&limit={limit}&adjustment=raw&feed={self.data_feed}")
+               f"?timeframe=1Day&start={start}&limit={limit}&adjustment=raw&feed={self.data_feed}")
         payload = self._request("GET", url)
         bars = []
         for b in payload.get("bars") or []:
