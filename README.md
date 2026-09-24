@@ -149,6 +149,16 @@ it, so opening that file always shows the latest track record. The buy-and-hold
 benchmark is tracked inside the state itself (shares fixed at inception, valued
 every tick), so the comparison stays lifetime-accurate no matter how long it runs.
 
+When trading through **Alpaca**, the trades live in your Alpaca account rather
+than the local state file, so point the dashboard at Alpaca directly — it reads
+your real account equity history, open positions, and fills:
+
+```bash
+python -m sockmarket dashboard --broker alpaca --symbols AAPL MSFT NVDA --out dashboard.html
+```
+
+The workflow does this automatically when the Alpaca secrets are set.
+
 ### Running it long-term, hands-off
 
 This bot needs a persistent home — a laptop that's on, a cheap VM, or best of

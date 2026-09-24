@@ -116,9 +116,20 @@ def cmd_live(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    from .dashboard import build_from_file
+    if args.broker == "alpaca":
+        from .dashboard import save_alpaca
+        from .live.brokers import AlpacaBroker, AlpacaError
 
-    out = build_from_file(args.state, args.out)
+        try:
+            broker = AlpacaBroker.from_env()
+            symbols = [s.upper() for s in args.symbols] if args.symbols else ["AAPL"]
+            out = save_alpaca(broker, symbols, args.out)
+        except AlpacaError as exc:
+            raise SystemExit(str(exc))
+    else:
+        from .dashboard import build_from_file
+
+        out = build_from_file(args.state, args.out)
     print(f"dashboard -> {out}")
     return 0
 
@@ -170,8 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
                       help="act on the latest bar even when the market is closed (for testing)")
     live.set_defaults(func=cmd_live)
 
-    dash = sub.add_parser("dashboard", help="render live state to a standalone HTML dashboard")
-    dash.add_argument("--state", default="data/live_state.json", help="live state JSON to read")
+    dash = sub.add_parser("dashboard", help="render a standalone HTML dashboard")
+    dash.add_argument("--broker", choices=["local", "alpaca"], default="local",
+                      help="'local' = from live_state.json; 'alpaca' = live from your paper account")
+    dash.add_argument("--symbols", nargs="*", default=None, help="traded symbols (alpaca benchmark)")
+    dash.add_argument("--state", default="data/live_state.json", help="live state JSON (local)")
     dash.add_argument("--out", default="dashboard.html", help="HTML file to write")
     dash.set_defaults(func=cmd_dashboard)
 

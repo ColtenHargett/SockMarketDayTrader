@@ -65,10 +65,18 @@ jobs:
 
       - name: Regenerate the dashboard
         if: always()  # refresh the dashboard even if a tick fetched no data
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
         run: |
-          python -m sockmarket dashboard \
-            --state data/live_state.json \
-            --out dashboard.html
+          if [ -n "$ALPACA_API_KEY_ID" ] && [ -n "$ALPACA_API_SECRET_KEY" ]; then
+            # Dashboard reflects the real Alpaca paper account (equity, positions, fills).
+            python -m sockmarket dashboard --broker alpaca \
+              --symbols AAPL MSFT GOOG AMZN NVDA --out dashboard.html
+          else
+            python -m sockmarket dashboard --broker local \
+              --state data/live_state.json --out dashboard.html
+          fi
 
       - name: Commit the updated track record
         if: always()

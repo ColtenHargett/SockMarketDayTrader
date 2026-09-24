@@ -29,19 +29,17 @@ def _buy_hold_series(state: LiveState) -> list[tuple[str, float]]:
 
     Mirrors the backtester's benchmark so the live comparison is apples-to-apples.
     """
-    history = state.history
-    symbols = sorted(history)
+    return _buy_hold_from_history(state.history, state.starting_cash)
+
+
+def _buy_hold_from_history(history: dict, starting_cash: float) -> list[tuple[str, float]]:
+    """Equal-weight buy-and-hold value per date from a {symbol: [Bar]} history."""
+    symbols = sorted(s for s in history if history.get(s))
     if not symbols:
         return []
-    starting = state.starting_cash
-    alloc = starting / len(symbols)
+    alloc = starting_cash / len(symbols)
+    shares = {s: alloc / history[s][0].close for s in symbols}
 
-    shares: dict[str, float] = {}
-    for s in symbols:
-        if history[s]:
-            shares[s] = alloc / history[s][0].close
-
-    # Union of all dates across symbols, in order.
     dates = sorted({b.date for s in symbols for b in history[s]})
     last_close: dict[str, float] = {}
     idx: dict[str, int] = {s: 0 for s in symbols}
@@ -221,14 +219,14 @@ def _trades_html(rows: list[dict]) -> str:
     )
 
 
-def render_dashboard(state: LiveState, title: str = "SockMarket — Live Track Record") -> str:
-    payload = _build_payload(state, title)
+def _render_html(payload: dict) -> str:
+    """Render a dashboard payload (from any source) into the HTML template."""
     data_json = json.dumps(payload)
     tiles = _stat_tiles(payload["stats"])
     positions = _positions_html(payload["positions"])
     trades = _trades_html(payload["trades"])
     gen = html.escape(payload["generated"])
-    last_run = html.escape(str(payload["stats"]["last_run"] or "never"))
+    last_run = html.escape(str(payload["stats"].get("last_run") or "never"))
     has_curve = len(payload["strategy"]) >= 2
 
     chart_section = (
@@ -240,7 +238,7 @@ def render_dashboard(state: LiveState, title: str = "SockMarket — Live Track R
         'bot has run for a couple of days.</p>'
     )
 
-    return _TEMPLATE.replace("__TITLE__", html.escape(title)) \
+    return _TEMPLATE.replace("__TITLE__", html.escape(payload["title"])) \
         .replace("__TILES__", tiles) \
         .replace("__CHART__", chart_section) \
         .replace("__POSITIONS__", positions) \
@@ -248,6 +246,10 @@ def render_dashboard(state: LiveState, title: str = "SockMarket — Live Track R
         .replace("__GENERATED__", gen) \
         .replace("__LASTRUN__", last_run) \
         .replace("__DATA__", data_json)
+
+
+def render_dashboard(state: LiveState, title: str = "SockMarket — Live Track Record") -> str:
+    return _render_html(_build_payload(state, title))
 
 
 def save(state: LiveState, path: str | Path,
@@ -261,6 +263,79 @@ def save(state: LiveState, path: str | Path,
 def build_from_file(state_path: str | Path, out_path: str | Path) -> Path:
     state = LiveState.load(state_path)
     return save(state, out_path)
+
+
+# --- Alpaca-backed dashboard --------------------------------------------
+def _build_alpaca_payload(broker, symbols: list[str], title: str) -> dict:
+    """Build a dashboard payload from a live Alpaca paper account."""
+    acct = broker.account()
+    equity = float(acct.get("equity") or 0.0)
+    cash = float(acct.get("cash") or 0.0)
+
+    dates, eq_series, base = broker.portfolio_history()
+    starting = base or (eq_series[0] if eq_series else equity)
+    strat = list(zip(dates, eq_series))
+
+    positions = broker.positions_detailed()
+    fills = broker.fills()
+
+    # Benchmark: equal-weight buy & hold of the traded symbols, from Alpaca daily
+    # bars, rebased so it starts at `starting` on the account's first history date.
+    history = {}
+    for s in symbols:
+        try:
+            history[s] = broker._daily_bars(s, 180)
+        except Exception:  # noqa: BLE001 - benchmark is best-effort
+            continue
+    bench_full = _buy_hold_from_history(history, starting)
+    bench = []
+    if strat and bench_full:
+        start_date = strat[0][0]
+        tail = [(d, v) for d, v in bench_full if d >= start_date]
+        if tail and tail[0][1]:
+            scale = starting / tail[0][1]  # rebase to the account's starting equity
+            bench = [(d, v * scale) for d, v in tail]
+
+    m = compute([dt.date.fromisoformat(d) for d, _ in strat], eq_series, [], len(fills)) \
+        if len(eq_series) >= 2 else None
+    total_return = (equity / starting - 1.0) if starting else 0.0
+    strat_window_return = (eq_series[-1] / eq_series[0] - 1.0) if len(eq_series) >= 2 and eq_series[0] else 0.0
+    bench_return = (bench[-1][1] / bench[0][1] - 1.0) if len(bench) >= 2 and bench[0][1] else 0.0
+
+    stats = {
+        "starting_cash": starting,
+        "current_equity": equity,
+        "total_return": total_return,
+        "bench_return": bench_return,
+        "edge": strat_window_return - bench_return,
+        "max_drawdown": (m.max_drawdown if m else 0.0),
+        "num_trades": len(fills),
+        "realized_pnl": equity - starting,  # net P&L of the account
+        "cash": cash,
+        "last_run": dt.datetime.now().isoformat(timespec="seconds"),
+    }
+    return {
+        "title": title,
+        "generated": dt.datetime.now().isoformat(timespec="seconds"),
+        "strategy": strat,
+        "benchmark": bench,
+        "stats": stats,
+        "positions": positions,
+        "trades": fills[:25],
+    }
+
+
+def render_alpaca_dashboard(broker, symbols: list[str],
+                            title: str = "SockMarket — Alpaca Paper Account") -> str:
+    return _render_html(_build_alpaca_payload(broker, symbols, title))
+
+
+def save_alpaca(broker, symbols: list[str], path: str | Path,
+                title: str = "SockMarket — Alpaca Paper Account") -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_alpaca_dashboard(broker, symbols, title))
+    return path
 
 
 _TEMPLATE = r"""<!DOCTYPE html>

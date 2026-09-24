@@ -222,5 +222,57 @@ class AlpacaBroker(LiveBroker):
         }
         self._request("POST", f"{self.base_url}/v2/orders", body)
 
+    # --- read-only account views (for the Alpaca-backed dashboard) -------
+    def account(self) -> dict:
+        return self._request("GET", f"{self.base_url}/v2/account")
+
+    def portfolio_history(self, period: str = "1M", timeframe: str = "1D") -> tuple[list[str], list[float], float]:
+        """Account equity over time as (date-iso list, equity list, base value)."""
+        url = f"{self.base_url}/v2/account/portfolio/history?period={period}&timeframe={timeframe}"
+        payload = self._request("GET", url)
+        stamps = payload.get("timestamp") or []
+        equity = payload.get("equity") or []
+        base = float(payload.get("base_value") or 0.0)
+        dates, values = [], []
+        for ts, eq in zip(stamps, equity):
+            if eq is None:
+                continue
+            dates.append(dt.datetime.fromtimestamp(ts, dt.timezone.utc).date().isoformat())
+            values.append(float(eq))
+        return dates, values, base
+
+    def positions_detailed(self) -> list[dict]:
+        raw = self._request("GET", f"{self.base_url}/v2/positions")
+        rows = []
+        for p in raw if isinstance(raw, list) else []:
+            qty = float(p.get("qty", 0.0))
+            avg = float(p.get("avg_entry_price", 0.0))
+            last = float(p.get("current_price") or avg)
+            rows.append({
+                "symbol": p["symbol"].upper(), "qty": qty, "avg_cost": avg, "last": last,
+                "value": float(p.get("market_value") or qty * last),
+                "unrealized": float(p.get("unrealized_pl") or (last - avg) * qty),
+            })
+        return sorted(rows, key=lambda r: r["symbol"])
+
+    def fills(self, limit: int = 50) -> list[dict]:
+        """Recent filled trades from the account activity feed, newest first."""
+        url = f"{self.base_url}/v2/account/activities/FILL?direction=desc&page_size={limit}"
+        raw = self._request("GET", url)
+        rows = []
+        for a in raw if isinstance(raw, list) else []:
+            try:
+                rows.append({
+                    "date": (a.get("transaction_time") or "")[:10],
+                    "symbol": a.get("symbol", "").upper(),
+                    "side": "buy" if a.get("side", "").startswith("buy") else "sell",
+                    "qty": float(a.get("qty", 0.0)),
+                    "price": float(a.get("price", 0.0)),
+                    "realized": 0.0,  # Alpaca activities don't carry per-fill realized P&L
+                })
+            except (ValueError, TypeError):
+                continue
+        return rows
+
     def describe(self) -> str:
         return f"AlpacaBroker(paper, {self.base_url})"
