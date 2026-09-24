@@ -116,6 +116,9 @@ class AlpacaBroker(LiveBroker):
     secret_key: str = ""
     base_url: str = "https://paper-api.alpaca.markets"
     data_url: str = "https://data.alpaca.markets"
+    # Free Alpaca accounts must use the IEX feed; the default (SIP) needs a paid
+    # data subscription and would 403. Override with ALPACA_DATA_FEED=sip if paid.
+    data_feed: str = "iex"
     timeout: float = 20.0
 
     @classmethod
@@ -128,7 +131,8 @@ class AlpacaBroker(LiveBroker):
                 "Get free paper-trading keys at https://alpaca.markets."
             )
         base = os.environ.get("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
-        return cls(key_id=key, secret_key=secret, base_url=base)
+        feed = os.environ.get("ALPACA_DATA_FEED", "iex")
+        return cls(key_id=key, secret_key=secret, base_url=base, data_feed=feed)
 
     # --- low-level HTTP --------------------------------------------------
     def _request(self, method: str, url: str, body: dict | None = None) -> dict:
@@ -146,26 +150,11 @@ class AlpacaBroker(LiveBroker):
             raise AlpacaError(f"Alpaca {method} {url} -> {exc.code}: {detail}") from exc
 
     # --- LiveBroker interface -------------------------------------------
-    def latest_bar(self, symbol: str) -> Bar | None:
-        url = f"{self.data_url}/v2/stocks/{symbol}/bars/latest"
+    def _daily_bars(self, symbol: str, limit: int) -> list[Bar]:
+        """Recent completed daily bars from Alpaca (IEX feed by default)."""
+        url = (f"{self.data_url}/v2/stocks/{symbol}/bars"
+               f"?timeframe=1Day&limit={limit}&adjustment=raw&feed={self.data_feed}")
         payload = self._request("GET", url)
-        bar = payload.get("bar")
-        if not bar:
-            return None
-        ts = bar["t"][:10]  # ISO timestamp -> date
-        return Bar(
-            date=dt.date.fromisoformat(ts),
-            symbol=symbol.upper(),
-            open=float(bar["o"]), high=float(bar["h"]), low=float(bar["l"]),
-            close=float(bar["c"]), volume=int(bar.get("v", 0)),
-        )
-
-    def backfill(self, symbol: str) -> list[Bar]:
-        url = f"{self.data_url}/v2/stocks/{symbol}/bars?timeframe=1Day&limit=120&adjustment=raw"
-        try:
-            payload = self._request("GET", url)
-        except AlpacaError:
-            return []
         bars = []
         for b in payload.get("bars") or []:
             try:
@@ -177,6 +166,18 @@ class AlpacaBroker(LiveBroker):
             except (KeyError, ValueError):
                 continue
         return bars
+
+    def latest_bar(self, symbol: str) -> Bar | None:
+        # An end-of-day bot wants the latest completed *daily* bar, not the last
+        # minute bar, so read daily bars and take the most recent.
+        bars = self._daily_bars(symbol, limit=2)
+        return bars[-1] if bars else None
+
+    def backfill(self, symbol: str) -> list[Bar]:
+        try:
+            return self._daily_bars(symbol, limit=120)
+        except AlpacaError:
+            return []
 
     def position_qty(self, symbol: str) -> float:
         try:
